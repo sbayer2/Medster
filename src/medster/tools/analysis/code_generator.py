@@ -27,6 +27,7 @@ from medster.tools.analysis.primitives import (
     load_ecg_image,
     get_dicom_metadata,
     analyze_image_with_claude,
+    analyze_ecg_for_rhythm,
     analyze_multiple_images_with_claude,
     PRIMITIVES_SPEC
 )
@@ -91,6 +92,7 @@ def create_sandbox_globals(patient_limit: int) -> dict:
         "load_ecg_image": load_ecg_image,
         "get_dicom_metadata": get_dicom_metadata,
         "analyze_image_with_claude": analyze_image_with_claude,
+        "analyze_ecg_for_rhythm": analyze_ecg_for_rhythm,
         "analyze_multiple_images_with_claude": analyze_multiple_images_with_claude,
 
         # Safe built-ins

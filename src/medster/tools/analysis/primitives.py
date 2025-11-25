@@ -372,6 +372,140 @@ def analyze_image_with_claude(image_base64: str, prompt: str) -> str:
         return f"Vision analysis error: {str(e)}"
 
 
+def analyze_ecg_for_rhythm(patient_id: str, clinical_context: str = "") -> Dict[str, Any]:
+    """
+    Analyze ECG image for cardiac rhythm with structured parsing.
+
+    This primitive loads the ECG, performs vision analysis, and parses the result
+    into structured data to avoid false positives from keyword matching.
+
+    Args:
+        patient_id: Patient UUID
+        clinical_context: Optional clinical context (e.g., "Patient with HTN and Hyperlipidemia")
+
+    Returns:
+        Dictionary with structured rhythm analysis:
+        {
+            "patient_id": str,
+            "ecg_available": bool,
+            "rhythm": str (e.g., "Normal Sinus Rhythm", "Atrial Fibrillation", "Other"),
+            "afib_detected": bool,
+            "rr_intervals": str (e.g., "Regular", "Irregular", "Irregularly Irregular"),
+            "p_waves": str (e.g., "Present and normal", "Absent", "Abnormal"),
+            "baseline": str (e.g., "Normal", "Fibrillatory", "Other"),
+            "confidence": str (e.g., "High", "Medium", "Low"),
+            "clinical_significance": str,
+            "raw_analysis": str
+        }
+
+    Example:
+        result = analyze_ecg_for_rhythm("patient-uuid-123", "HTN + Hyperlipidemia")
+        if result["afib_detected"]:
+            print(f"AFib detected with {result['confidence']} confidence")
+    """
+    try:
+        # Load ECG image
+        ecg_image = load_ecg_image(patient_id)
+
+        if not ecg_image:
+            return {
+                "patient_id": patient_id,
+                "ecg_available": False,
+                "rhythm": "Unknown",
+                "afib_detected": False,
+                "rr_intervals": "Unknown",
+                "p_waves": "Unknown",
+                "baseline": "Unknown",
+                "confidence": "N/A",
+                "clinical_significance": "No ECG image available for analysis",
+                "raw_analysis": ""
+            }
+
+        # Structured prompt for ECG rhythm analysis
+        context_str = f" (Clinical context: {clinical_context})" if clinical_context else ""
+        prompt = f"""Analyze this ECG tracing for patient {patient_id}{context_str}.
+
+Specifically assess for atrial fibrillation patterns and provide your analysis in this EXACT format:
+
+RHYTHM: [State the rhythm - Normal Sinus Rhythm, Atrial Fibrillation, or Other]
+R-R INTERVALS: [Regular, Irregular, or Irregularly Irregular]
+P WAVES: [Present and normal, Absent, or Abnormal]
+BASELINE: [Normal, Fibrillatory, or Other]
+CLINICAL SIGNIFICANCE: [Brief clinical assessment]
+CONFIDENCE: [High, Medium, or Low]
+
+Be precise in your RHYTHM classification. Only state "Atrial Fibrillation" if you see irregularly irregular R-R intervals, absent P waves, AND fibrillatory baseline."""
+
+        # Get vision analysis
+        from medster.model import call_llm
+        response = call_llm(
+            prompt=prompt,
+            images=[ecg_image],
+            model="claude-sonnet-4.5"
+        )
+
+        raw_text = response.content if hasattr(response, 'content') else str(response)
+
+        # Parse structured response with better logic
+        def extract_field(text: str, field_name: str) -> str:
+            """Extract value after 'FIELD_NAME:' line"""
+            import re
+            pattern = rf'{field_name}:\s*(.+?)(?:\n|$)'
+            match = re.search(pattern, text, re.IGNORECASE)
+            return match.group(1).strip() if match else "Unknown"
+
+        rhythm = extract_field(raw_text, "RHYTHM")
+        rr_intervals = extract_field(raw_text, "R-R INTERVALS")
+        p_waves = extract_field(raw_text, "P WAVES")
+        baseline = extract_field(raw_text, "BASELINE")
+        significance = extract_field(raw_text, "CLINICAL SIGNIFICANCE")
+        confidence = extract_field(raw_text, "CONFIDENCE")
+
+        # Determine AFib based on RHYTHM field, not keyword matching
+        afib_detected = False
+        rhythm_lower = rhythm.lower()
+
+        if "atrial fibrillation" in rhythm_lower or rhythm_lower == "afib":
+            afib_detected = True
+        elif "normal sinus rhythm" in rhythm_lower or rhythm_lower == "nsr":
+            afib_detected = False
+        # Secondary check: if rhythm unclear, check for classic AFib triad
+        elif rhythm_lower == "unknown" or rhythm_lower == "other":
+            afib_triad = (
+                "irregularly irregular" in rr_intervals.lower() and
+                "absent" in p_waves.lower() and
+                "fibrillatory" in baseline.lower()
+            )
+            afib_detected = afib_triad
+
+        return {
+            "patient_id": patient_id,
+            "ecg_available": True,
+            "rhythm": rhythm,
+            "afib_detected": afib_detected,
+            "rr_intervals": rr_intervals,
+            "p_waves": p_waves,
+            "baseline": baseline,
+            "confidence": confidence,
+            "clinical_significance": significance,
+            "raw_analysis": raw_text
+        }
+
+    except Exception as e:
+        return {
+            "patient_id": patient_id,
+            "ecg_available": False,
+            "rhythm": "Error",
+            "afib_detected": False,
+            "rr_intervals": "Error",
+            "p_waves": "Error",
+            "baseline": "Error",
+            "confidence": "N/A",
+            "clinical_significance": f"Analysis error: {str(e)}",
+            "raw_analysis": ""
+        }
+
+
 def analyze_multiple_images_with_claude(images: List[str], prompt: str) -> str:
     """
     Analyze multiple medical images together using Claude's vision API.
@@ -494,6 +628,16 @@ analyze_image_with_claude(image_base64: str, prompt: str) -> str
     # prompt: Clinical question (e.g., "Does this ECG show atrial fibrillation?")
     # Returns: Vision analysis as text
     # Example: analysis = analyze_image_with_claude(ecg, "Detect AFib pattern")
+
+analyze_ecg_for_rhythm(patient_id: str, clinical_context: str = "") -> Dict
+    # RECOMMENDED FOR ECG RHYTHM ANALYSIS - Structured parsing prevents false positives
+    # Loads ECG, performs vision analysis, and parses result into structured data
+    # Returns: {"patient_id", "ecg_available", "rhythm", "afib_detected", "rr_intervals",
+    #           "p_waves", "baseline", "confidence", "clinical_significance", "raw_analysis"}
+    # rhythm: "Normal Sinus Rhythm", "Atrial Fibrillation", or "Other"
+    # afib_detected: bool (based on RHYTHM field, not keyword matching)
+    # Example: result = analyze_ecg_for_rhythm(pid, "HTN + Hyperlipidemia")
+    #          if result["afib_detected"]: print(f"AFib: {result['confidence']} confidence")
 
 analyze_multiple_images_with_claude(images: List[str], prompt: str) -> str
     # Analyze multiple images together using Claude vision API

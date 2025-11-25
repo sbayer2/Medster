@@ -165,6 +165,14 @@ load_ecg_image(patient_id: str) -> Optional[str]
 
 get_dicom_metadata(patient_id: str, image_index: int = 0) -> Dict
     # Returns: {"modality", "study_description", "body_part", "dimensions", ...}
+
+analyze_ecg_for_rhythm(patient_id: str, clinical_context: str = "") -> Dict
+    # RECOMMENDED for ECG rhythm analysis - prevents false positives
+    # Loads ECG, performs vision analysis, parses into structured data
+    # Returns: {"patient_id", "ecg_available", "rhythm", "afib_detected",
+    #           "rr_intervals", "p_waves", "baseline", "confidence",
+    #           "clinical_significance", "raw_analysis"}
+    # afib_detected: bool (based on RHYTHM field parsing, not keyword matching)
 ```
 
 ### Vision Analysis Workflow

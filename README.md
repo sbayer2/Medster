@@ -64,8 +64,28 @@ pip install -e .
 3. Configure environment:
 ```bash
 cp env.example .env
-# Edit .env with your API keys
 ```
+
+4. Get your Anthropic API key:
+   - Sign up at https://console.anthropic.com/
+   - Go to API Keys section
+   - Create a new API key
+   - Copy the key (starts with `sk-ant-`)
+
+5. Edit `.env` file with your credentials:
+```bash
+# Required: Your Anthropic API key for Claude Sonnet 4.5
+ANTHROPIC_API_KEY=sk-ant-your_actual_key_here
+
+# Required: Path to Coherent Data Set FHIR folder
+COHERENT_DATA_PATH=./coherent_data/fhir
+
+# Optional: Your MCP medical analysis server
+MCP_SERVER_URL=http://localhost:8000
+MCP_API_KEY=your_mcp_key_if_needed
+```
+
+**⚠️ Security Note:** Never commit your `.env` file to git. It's already in `.gitignore` to protect your API keys.
 
 ## Usage
 

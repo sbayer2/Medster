@@ -12,7 +12,7 @@ from medster.prompts import DEFAULT_SYSTEM_PROMPT
 
 def call_llm(
     prompt: str,
-    model: str = "claude-sonnet-4.5",
+    model: str = "claude-opus-4.5",
     system_prompt: Optional[str] = None,
     output_schema: Optional[Type[BaseModel]] = None,
     tools: Optional[List[BaseTool]] = None,
@@ -23,7 +23,7 @@ def call_llm(
 
     Args:
         prompt: The user prompt to send
-        model: The Claude model to use (default: claude-sonnet-4.5)
+        model: The Claude model to use (default: claude-opus-4.5)
                Supports: claude-sonnet-4.5, claude-opus-4, claude-haiku-4
         system_prompt: Optional system prompt override
         output_schema: Optional Pydantic schema for structured output
@@ -39,11 +39,11 @@ def call_llm(
     model_mapping = {
         "claude-sonnet-4.5": "claude-sonnet-4-20250514",
         "claude-sonnet-4": "claude-sonnet-4-20250514",
-        "claude-opus-4": "claude-opus-4-20250514",
+        "claude-opus-4.5": "claude-opus-4-5-20251101",
         "claude-haiku-4": "claude-haiku-4-20250615",
     }
 
-    anthropic_model = model_mapping.get(model, "claude-sonnet-4-20250514")
+    anthropic_model = model_mapping.get(model, "claude-opus-4-5-20251101")
 
     # Initialize Claude LLM
     llm = ChatAnthropic(
