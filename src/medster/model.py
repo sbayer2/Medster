@@ -24,7 +24,8 @@ def call_llm(
     Args:
         prompt: The user prompt to send
         model: The Claude model to use (default: claude-opus-4.5)
-               Supports: claude-sonnet-4.5, claude-opus-4, claude-haiku-4
+               Supports: claude-opus-4.5 (flagship), claude-sonnet-4.5, claude-haiku-4
+               Opus 4.5 (Nov 2025): Enhanced multimodal + agentic capabilities
         system_prompt: Optional system prompt override
         output_schema: Optional Pydantic schema for structured output
         tools: Optional list of tools to bind
