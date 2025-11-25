@@ -4,10 +4,103 @@ Vision analysis tool for medical images using Claude's vision API.
 
 from langchain.tools import tool
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 
 from medster.model import call_llm
+from medster.tools.analysis.primitives import (
+    load_ecg_image,
+    load_dicom_image,
+    find_patient_images,
+    analyze_ecg_for_rhythm
+)
+
+
+class PatientECGAnalysisInput(BaseModel):
+    """Input schema for patient ECG analysis."""
+
+    patient_id: str = Field(
+        description="Patient UUID to analyze ECG for"
+    )
+    clinical_question: str = Field(
+        default="Analyze the ECG tracing and describe the cardiac rhythm including rate, regularity, P waves, QRS complexes, and any abnormalities",
+        description="Specific clinical question about the ECG"
+    )
+    clinical_context: str = Field(
+        default="",
+        description="Optional clinical context (e.g., 'Patient with hypertension and diabetes')"
+    )
+
+
+@tool(args_schema=PatientECGAnalysisInput)
+def analyze_patient_ecg(
+    patient_id: str,
+    clinical_question: str = "Analyze the ECG tracing and describe the cardiac rhythm including rate, regularity, P waves, QRS complexes, and any abnormalities",
+    clinical_context: str = ""
+) -> dict:
+    """
+    Analyze a patient's ECG image using Claude's vision API.
+
+    This tool takes a patient_id and automatically loads their ECG image,
+    then performs vision analysis to answer clinical questions about the ECG.
+
+    Use this when you have a patient ID and want to visually analyze their ECG tracing.
+    The tool handles image loading internally - you don't need base64 data.
+
+    Returns structured analysis including rhythm classification, findings, and clinical significance.
+    """
+    try:
+        # Use the structured ECG analysis primitive
+        result = analyze_ecg_for_rhythm(patient_id, clinical_context)
+
+        if not result.get("ecg_available", False):
+            return {
+                "status": "error",
+                "patient_id": patient_id,
+                "error": "No ECG image available for this patient"
+            }
+
+        # If custom question, do additional analysis
+        if "atrial fibrillation" not in clinical_question.lower() and "rhythm" not in clinical_question.lower():
+            # Load image for custom analysis
+            ecg_image = load_ecg_image(patient_id)
+            if ecg_image:
+                context_str = f" (Clinical context: {clinical_context})" if clinical_context else ""
+                prompt = f"""Analyze this ECG tracing for patient {patient_id}{context_str}.
+
+{clinical_question}
+
+Provide a detailed analysis with specific findings."""
+
+                response = call_llm(
+                    prompt=prompt,
+                    images=[ecg_image],
+                    model="claude-sonnet-4.5"
+                )
+                custom_analysis = response.content if hasattr(response, 'content') else str(response)
+                result["custom_analysis"] = custom_analysis
+
+        return {
+            "status": "success",
+            "patient_id": patient_id,
+            "ecg_available": True,
+            "rhythm": result.get("rhythm", "Unknown"),
+            "afib_detected": result.get("afib_detected", False),
+            "rr_intervals": result.get("rr_intervals", "Unknown"),
+            "p_waves": result.get("p_waves", "Unknown"),
+            "baseline": result.get("baseline", "Unknown"),
+            "confidence": result.get("confidence", "Unknown"),
+            "clinical_significance": result.get("clinical_significance", ""),
+            "clinical_context": clinical_context,
+            "detailed_analysis": result.get("raw_analysis", "")
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "patient_id": patient_id,
+            "error": f"ECG analysis failed: {str(e)}"
+        }
 
 
 class VisionAnalysisInput(BaseModel):

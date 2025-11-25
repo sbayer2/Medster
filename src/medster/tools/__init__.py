@@ -36,8 +36,9 @@ from medster.tools.analysis.code_generator import (
     generate_and_run_analysis,
 )
 
-# Import vision analysis tool
+# Import vision analysis tools
 from medster.tools.analysis.vision_analyzer import (
+    analyze_patient_ecg,
     analyze_medical_images,
 )
 
@@ -74,5 +75,6 @@ TOOLS: list[Callable[..., any]] = [
     generate_and_run_analysis,
 
     # Vision analysis for medical images
-    analyze_medical_images,
+    analyze_patient_ecg,  # Simple: takes patient_id, loads image internally
+    analyze_medical_images,  # Advanced: takes raw base64 image data
 ]
