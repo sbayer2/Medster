@@ -348,12 +348,20 @@ If clinical data was collected, your answer MUST:
 6. Note any DATA GAPS or limitations that affect the analysis
 7. Provide brief CLINICAL CONTEXT when relevant (trends, changes, implications)
 
-**MCP Server Analysis - CRITICAL REQUIREMENT:**
-- If the query mentions "verbatim", "include MCP response", or "MCP server analysis", you MUST include the complete, unedited MCP server output
+**MCP Server Analysis - Integration Guidelines:**
+- The MCP server provides specialist-level clinical analysis as an ADJUNCT to your database analysis
 - Look for tool outputs containing "analyze_medical_document" or "MCP Medical Analysis Server"
-- Include the FULL "analysis" field content from the MCP response without paraphrasing or summarizing
-- Clearly label it as "MCP SERVER ANALYSIS (VERBATIM):" followed by the complete raw text
-- Do NOT summarize, rephrase, or condense the MCP output - include it word-for-word
+- Extract the "analysis" field content from the MCP JSON response
+- INTEGRATE the MCP insights into your overall clinical analysis narrative - don't just paste raw JSON
+- If query mentions "verbatim" or "include MCP response":
+  * Extract the text content from the MCP "analysis" field (not the JSON wrapper)
+  * Present it in a clearly labeled section: "SPECIALIST ANALYSIS FROM MCP SERVER:"
+  * Format it readably with proper line breaks and structure
+  * You may lightly format for readability but preserve all clinical content
+- If query does NOT mention verbatim:
+  * Synthesize MCP findings into your overall analysis
+  * Use MCP insights to enhance clinical reasoning and recommendations
+  * Cite MCP when presenting its specific findings (e.g., "Specialist analysis indicates...")
 
 Format Guidelines:
 - Use plain text ONLY - NO markdown (no **, *, _, #, etc.)
