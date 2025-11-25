@@ -53,11 +53,36 @@ This prevents the agent from making rigid assumptions about data structure and e
 
 The `call_llm` function exclusively uses Claude (Anthropic) models:
 
-- Default model: `claude-sonnet-4.5` (maps to `claude-sonnet-4-20250514`)
-- Supported models: `claude-sonnet-4.5`, `claude-opus-4`, `claude-haiku-4`
+- Default model: `claude-opus-4.5` (maps to `claude-opus-4-5-20251101`)
+- Supported models: `claude-sonnet-4.5`, `claude-opus-4.5`, `claude-haiku-4`
 - Supports structured output via Pydantic schemas
 - Implements retry logic with exponential backoff (3 attempts, 0.5s → 1s delays)
 - Tool binding for autonomous tool selection
+
+### Context Management (utils/context_manager.py)
+
+Prevents token overflow when analyzing large datasets (e.g., 500 patients).
+
+**Key Functions:**
+- `format_output_for_context(tool_name, args, result)` - Truncates and summarizes large tool outputs
+- `manage_context_size(outputs)` - Manages total context by prioritizing recent outputs
+- `summarize_list_result(result)` - Summarizes list results (keeps first 20 items + count)
+- `get_context_stats(outputs)` - Reports token utilization stats
+
+**Token Limits:**
+- `MAX_OUTPUT_TOKENS = 50000` - Max tokens for accumulated outputs
+- `MAX_SINGLE_OUTPUT_TOKENS = 10000` - Max tokens per tool output
+- Estimates ~3.5 characters per token for medical text
+
+**Truncation Strategy:**
+- Large outputs: Keeps 40% from start, 40% from end, adds truncation notice
+- Context overflow: Keeps most recent outputs, drops older ones
+- List results: Keeps first 20 items, adds `_total_count` and `_truncated` flags
+
+**Agent Integration:**
+- `ask_for_actions()` uses `manage_context_size()` for `last_outputs` parameter
+- `_generate_answer()` uses `manage_context_size()` for final summary
+- Logs warnings when context utilization exceeds 80%
 
 ### Prompts System (prompts.py)
 

@@ -15,6 +15,11 @@ from medster.schemas import Answer, IsDone, OptimizedToolArgs, Task, TaskList
 from medster.tools import TOOLS
 from medster.utils.logger import Logger
 from medster.utils.ui import show_progress
+from medster.utils.context_manager import (
+    format_output_for_context,
+    manage_context_size,
+    get_context_stats
+)
 
 
 class Agent:
@@ -193,9 +198,15 @@ class Agent:
                     self.logger._log("Global max steps reached - stopping.")
                     return
 
-                # Pass ALL outputs from the entire session, not just current task outputs
-                # This ensures the LLM can see data from previous tasks (e.g., discharge summary)
-                all_session_outputs = "\n".join(task_outputs + task_step_outputs)
+                # Pass outputs with context management to prevent token overflow
+                # Uses truncation and prioritizes recent outputs
+                all_session_outputs = manage_context_size(task_outputs + task_step_outputs)
+
+                # Log context stats periodically for debugging
+                stats = get_context_stats(task_outputs + task_step_outputs)
+                if stats["at_risk"]:
+                    self.logger._log(f"Context warning: {stats['estimated_tokens']}/{stats['max_tokens']} tokens ({stats['utilization_pct']}%)")
+
                 ai_message = self.ask_for_actions(task.description, last_outputs=all_session_outputs)
 
                 if not ai_message.tool_calls:
@@ -227,7 +238,8 @@ class Agent:
                         try:
                             result = self._execute_tool(tool_to_run, tool_name, optimized_args)
                             self.logger.log_tool_run(optimized_args, result)
-                            output = f"Output of {tool_name} with args {optimized_args}: {result}"
+                            # Use context manager to format and truncate large outputs
+                            output = format_output_for_context(tool_name, optimized_args, result)
                             task_outputs.append(output)
                             task_step_outputs.append(output)
                         except Exception as e:
@@ -258,7 +270,8 @@ class Agent:
     @show_progress("Generating clinical summary...", "Analysis complete")
     def _generate_answer(self, query: str, task_outputs: list) -> str:
         """Generate the final clinical analysis based on collected data."""
-        all_results = "\n\n".join(task_outputs) if task_outputs else "No clinical data was collected."
+        # Apply context management to prevent token overflow in final summary
+        all_results = manage_context_size(task_outputs) if task_outputs else "No clinical data was collected."
         answer_prompt = f"""
         Original clinical query: "{query}"
 
