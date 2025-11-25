@@ -152,32 +152,27 @@ def analyze_medical_document(
                 if MCP_API_KEY:
                     headers["Authorization"] = f"Bearer {MCP_API_KEY}"
 
-                # Determine if this is MCP or REST endpoint
-                if endpoint.endswith("/analyze_medical_document"):
-                    # REST endpoint - use simple payload with disclaimer
-                    payload = {
-                        "document": note_with_disclaimer,
-                        "analysis_type": server_analysis_type,  # Use mapped type
-                    }
-                    # NOTE: context parameter removed - not supported by FastMCP server
-                    response = requests.post(
-                        endpoint,
-                        json=payload,
-                        headers=headers,
-                        timeout=120
-                    )
-                else:
-                    # MCP JSON-RPC endpoint
-                    mcp_log(f"[MCP] Sending JSON-RPC request to {endpoint}")
-                    response = requests.post(
-                        endpoint,
-                        json=mcp_request,
-                        headers=headers,
-                        timeout=120
-                    )
-                    mcp_log(f"[MCP] Response status: {response.status_code}")
-                    mcp_log(f"[MCP] Response headers: {dict(response.headers)}")
-                    mcp_log(f"[MCP] Response body (first 500 chars): {response.text[:500]}")
+                # Send plain text document to server (not JSON-RPC)
+                # The FastMCP server expects plain text document content
+                mcp_log(f"[MCP] Sending plain text document to {endpoint}")
+
+                # Use text/plain content type for document
+                text_headers = {
+                    "Content-Type": "text/plain",
+                    "Accept": "application/json, text/plain"
+                }
+                if MCP_API_KEY:
+                    text_headers["Authorization"] = f"Bearer {MCP_API_KEY}"
+
+                response = requests.post(
+                    endpoint,
+                    data=note_with_disclaimer,  # Plain text, not JSON
+                    headers=text_headers,
+                    timeout=120
+                )
+                mcp_log(f"[MCP] Response status: {response.status_code}")
+                mcp_log(f"[MCP] Response headers: {dict(response.headers)}")
+                mcp_log(f"[MCP] Response body (first 500 chars): {response.text[:500]}")
 
                 if response.status_code == 200:
                     # Handle SSE (Server-Sent Events) format from FastMCP
