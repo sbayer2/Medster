@@ -112,8 +112,8 @@ def analyze_medical_document(
         note_with_disclaimer = SYNTHETIC_DATA_DISCLAIMER + note_text
         mcp_log(f"[MCP] Added synthetic data disclaimer ({len(SYNTHETIC_DATA_DISCLAIMER)} chars)")
 
-        # Build MCP JSON-RPC request for tool call
-        # FastMCP servers use JSON-RPC 2.0 protocol
+        # Build MCP JSON-RPC 2.0 request for tool call
+        # The /mcp endpoint requires JSON-RPC format
         mcp_request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -145,12 +145,8 @@ def analyze_medical_document(
         mcp_request["id"] = request_id
         mcp_log(f"[MCP] Request ID: {request_id}")
 
-        # Warmup ping to prevent cold start (quick HEAD request)
-        try:
-            warmup_response = requests.head(MCP_SERVER_URL, timeout=5)
-            mcp_log(f"[MCP] Warmup ping: {warmup_response.status_code}")
-        except Exception as e:
-            mcp_log(f"[MCP] Warmup ping failed (non-fatal): {e}")
+        # Note: Warmup ping removed - HEAD method returns 405 on MCP endpoints
+        # The unique request ID prevents caching issues instead
 
         last_error = None
         for endpoint in mcp_endpoints:
@@ -160,7 +156,7 @@ def analyze_medical_document(
                 try:
                     mcp_log(f"[MCP] Trying endpoint: {endpoint} (attempt {retry + 1}/{max_retries})")
                     if endpoint.endswith("/mcp") or endpoint.endswith("/rpc"):
-                        mcp_log(f"[MCP] Request params: {mcp_request['params']['arguments']}")
+                        mcp_log(f"[MCP] Request arguments: {mcp_request['params']['arguments']}")
 
                     # Build headers with optional auth
                     # CloudFront requires application/json Content-Type for this server
@@ -214,15 +210,49 @@ def analyze_medical_document(
                         mcp_log(f"[MCP] Success from {endpoint}")
                         mcp_log(f"[MCP] Response keys: {result.keys() if isinstance(result, dict) else 'not dict'}")
 
-                        if isinstance(result, dict) and "result" in result:
-                            mcp_log(f"[MCP] Result keys: {result['result'].keys() if isinstance(result['result'], dict) else type(result['result'])}")
+                        # Handle direct MCP response format (not JSON-RPC wrapped)
+                        # Response format: {"content": [...], "isError": false, "structuredContent": {...}}
+                        if "content" in result:
+                            content = result["content"]
+                            mcp_log(f"[MCP] Content type: {type(content)}, length: {len(content) if isinstance(content, (list, str)) else 'N/A'}")
 
-                        # Handle MCP JSON-RPC response format
-                        if "result" in result:
-                            # MCP response - extract content
+                            if isinstance(content, list) and len(content) > 0:
+                                analysis_text = content[0].get("text", str(content))
+                            else:
+                                analysis_text = str(content)
+
+                            mcp_log(f"[MCP] Analysis text length: {len(analysis_text)} chars")
+
+                            # Check if this is an error response
+                            if result.get("isError"):
+                                mcp_log(f"[MCP] ERROR RESPONSE: {analysis_text}")
+                                return {
+                                    "analysis_type": analysis_type,
+                                    "server_analysis_type": server_analysis_type,
+                                    "status": "error",
+                                    "error": f"MCP Server Error: {analysis_text}",
+                                    "source": f"MCP Medical Analysis Server ({endpoint})"
+                                }
+
+                            # Get structured content if available
+                            structured = result.get("structuredContent", {})
+                            tokens_used = structured.get("tokens_used", {})
+
+                            return {
+                                "analysis_type": analysis_type,
+                                "server_analysis_type": server_analysis_type,
+                                "status": "success",
+                                "analysis": analysis_text,
+                                "tokens_used": tokens_used.get("total_tokens", 0) if isinstance(tokens_used, dict) else 0,
+                                "processing_time": structured.get("processing_time_seconds", 0),
+                                "source": f"MCP Medical Analysis Server ({endpoint})"
+                            }
+                        elif "result" in result:
+                            # JSON-RPC wrapped response
                             mcp_result = result["result"]
+                            mcp_log(f"[MCP] JSON-RPC result keys: {mcp_result.keys() if isinstance(mcp_result, dict) else type(mcp_result)}")
+
                             if isinstance(mcp_result, dict) and "content" in mcp_result:
-                                # Extract text content from MCP response
                                 content = mcp_result["content"]
                                 mcp_log(f"[MCP] Content type: {type(content)}, length: {len(content) if isinstance(content, (list, str)) else 'N/A'}")
 
@@ -233,7 +263,7 @@ def analyze_medical_document(
 
                                 mcp_log(f"[MCP] Analysis text length: {len(analysis_text)} chars")
 
-                                # Check if this is an error response
+                                # Check for error
                                 if mcp_result.get("isError"):
                                     mcp_log(f"[MCP] ERROR RESPONSE: {analysis_text}")
                                     return {
@@ -244,36 +274,29 @@ def analyze_medical_document(
                                         "source": f"MCP Medical Analysis Server ({endpoint})"
                                     }
 
+                                # Get structured content if available
+                                structured = mcp_result.get("structuredContent", {})
+                                tokens_used = structured.get("tokens_used", {})
+
                                 return {
                                     "analysis_type": analysis_type,
                                     "server_analysis_type": server_analysis_type,
                                     "status": "success",
                                     "analysis": analysis_text,
-                                    "tokens_used": mcp_result.get("tokens_used", 0),
-                                    "source": f"MCP Medical Analysis Server ({endpoint})"
-                                }
-                            else:
-                                # No content field - return raw result
-                                mcp_log(f"[MCP] No 'content' field in result, returning raw: {str(mcp_result)[:200]}")
-                                return {
-                                    "analysis_type": analysis_type,
-                                    "server_analysis_type": server_analysis_type,
-                                    "status": "success",
-                                    "analysis": mcp_result,
+                                    "tokens_used": tokens_used.get("total_tokens", 0) if isinstance(tokens_used, dict) else 0,
+                                    "processing_time": structured.get("processing_time_seconds", 0),
                                     "source": f"MCP Medical Analysis Server ({endpoint})"
                                 }
                         elif "error" in result:
-                            # MCP error response - don't retry, this is a server-side error
-                            last_error = result["error"].get("message", str(result["error"]))
-                            break  # Try next endpoint
+                            last_error = result["error"].get("message", str(result["error"])) if isinstance(result["error"], dict) else str(result["error"])
+                            break
                         else:
-                            # REST response format
+                            # Unknown format - return as-is
                             return {
                                 "analysis_type": analysis_type,
                                 "server_analysis_type": server_analysis_type,
                                 "status": "success",
-                                "analysis": result.get("analysis", result),
-                                "tokens_used": result.get("tokens_used", 0),
+                                "analysis": str(result),
                                 "source": f"MCP Medical Analysis Server ({endpoint})"
                             }
                     elif response.status_code == 404:
