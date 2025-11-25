@@ -138,6 +138,20 @@ def analyze_medical_document(
         ]
 
         import time as time_module
+        import uuid
+
+        # Add unique request ID to prevent CloudFront caching
+        request_id = str(uuid.uuid4())
+        mcp_request["id"] = request_id
+        mcp_log(f"[MCP] Request ID: {request_id}")
+
+        # Warmup ping to prevent cold start (quick HEAD request)
+        try:
+            warmup_response = requests.head(MCP_SERVER_URL, timeout=5)
+            mcp_log(f"[MCP] Warmup ping: {warmup_response.status_code}")
+        except Exception as e:
+            mcp_log(f"[MCP] Warmup ping failed (non-fatal): {e}")
+
         last_error = None
         for endpoint in mcp_endpoints:
             # Retry logic with exponential backoff for timeouts
@@ -152,7 +166,9 @@ def analyze_medical_document(
                     # CloudFront requires application/json Content-Type for this server
                     headers = {
                         "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream"
+                        "Accept": "application/json, text/event-stream",
+                        "Cache-Control": "no-cache, no-store",
+                        "X-Request-ID": request_id,
                     }
                     if MCP_API_KEY:
                         headers["Authorization"] = f"Bearer {MCP_API_KEY}"
