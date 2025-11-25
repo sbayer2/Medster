@@ -137,141 +137,156 @@ def analyze_medical_document(
             MCP_SERVER_URL,  # Use the complete endpoint URL from config
         ]
 
+        import time as time_module
         last_error = None
         for endpoint in mcp_endpoints:
-            try:
-                mcp_log(f"[MCP] Trying endpoint: {endpoint}")
-                if endpoint.endswith("/mcp") or endpoint.endswith("/rpc"):
-                    mcp_log(f"[MCP] Request params: {mcp_request['params']['arguments']}")
+            # Retry logic with exponential backoff for timeouts
+            max_retries = 2
+            for retry in range(max_retries):
+                try:
+                    mcp_log(f"[MCP] Trying endpoint: {endpoint} (attempt {retry + 1}/{max_retries})")
+                    if endpoint.endswith("/mcp") or endpoint.endswith("/rpc"):
+                        mcp_log(f"[MCP] Request params: {mcp_request['params']['arguments']}")
 
-                # Build headers with optional auth
-                # CloudFront requires application/json Content-Type for this server
-                headers = {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream"
-                }
-                if MCP_API_KEY:
-                    headers["Authorization"] = f"Bearer {MCP_API_KEY}"
+                    # Build headers with optional auth
+                    # CloudFront requires application/json Content-Type for this server
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream"
+                    }
+                    if MCP_API_KEY:
+                        headers["Authorization"] = f"Bearer {MCP_API_KEY}"
 
-                # Send JSON-RPC request (NOT plain text - CloudFront rejects text/plain)
-                mcp_log(f"[MCP] Sending JSON-RPC request to {endpoint}")
+                    # Send JSON-RPC request (NOT plain text - CloudFront rejects text/plain)
+                    mcp_log(f"[MCP] Sending JSON-RPC request to {endpoint}")
 
-                response = requests.post(
-                    endpoint,
-                    json=mcp_request,  # JSON-RPC format
-                    headers=headers,
-                    timeout=180  # 3 minutes for complex analysis
-                )
-                mcp_log(f"[MCP] Response status: {response.status_code}")
-                mcp_log(f"[MCP] Response headers: {dict(response.headers)}")
-                mcp_log(f"[MCP] Response body (first 500 chars): {response.text[:500]}")
+                    response = requests.post(
+                        endpoint,
+                        json=mcp_request,  # JSON-RPC format
+                        headers=headers,
+                        timeout=180  # 3 minutes for complex analysis
+                    )
+                    mcp_log(f"[MCP] Response status: {response.status_code}")
+                    mcp_log(f"[MCP] Response headers: {dict(response.headers)}")
+                    mcp_log(f"[MCP] Response body (first 500 chars): {response.text[:500]}")
 
-                if response.status_code == 200:
-                    # Handle SSE (Server-Sent Events) format from FastMCP
-                    response_text = response.text
-                    mcp_log(f"[MCP] Parsing response format")
+                    if response.status_code == 200:
+                        # Handle SSE (Server-Sent Events) format from FastMCP
+                        response_text = response.text
+                        mcp_log(f"[MCP] Parsing response format")
 
-                    # Parse SSE format: SSE can have ping comments (: ping), event lines, and data lines
-                    # Look for "data:" line which contains the JSON-RPC response
-                    if "event:" in response_text or response_text.startswith(":"):
-                        # Extract JSON from SSE data line
-                        lines = response_text.split("\n")
-                        mcp_log(f"[MCP] Found {len(lines)} lines in SSE response")
-                        for line in lines:
-                            if line.startswith("data:"):
-                                json_str = line[5:].strip()  # Remove "data:" prefix
-                                mcp_log(f"[MCP] Found data line, length: {len(json_str)} chars")
-                                result = json.loads(json_str)
-                                mcp_log(f"[MCP] Successfully parsed JSON-RPC response")
-                                break
-                        else:
-                            result = {"error": "No data in SSE response"}
-                    else:
-                        # Regular JSON response
-                        mcp_log(f"[MCP] Parsing as regular JSON")
-                        result = response.json()
-
-                    mcp_log(f"[MCP] Success from {endpoint}")
-                    mcp_log(f"[MCP] Response keys: {result.keys() if isinstance(result, dict) else 'not dict'}")
-
-                    if isinstance(result, dict) and "result" in result:
-                        mcp_log(f"[MCP] Result keys: {result['result'].keys() if isinstance(result['result'], dict) else type(result['result'])}")
-
-                    # Handle MCP JSON-RPC response format
-                    if "result" in result:
-                        # MCP response - extract content
-                        mcp_result = result["result"]
-                        if isinstance(mcp_result, dict) and "content" in mcp_result:
-                            # Extract text content from MCP response
-                            content = mcp_result["content"]
-                            mcp_log(f"[MCP] Content type: {type(content)}, length: {len(content) if isinstance(content, (list, str)) else 'N/A'}")
-
-                            if isinstance(content, list) and len(content) > 0:
-                                analysis_text = content[0].get("text", str(content))
+                        # Parse SSE format: SSE can have ping comments (: ping), event lines, and data lines
+                        # Look for "data:" line which contains the JSON-RPC response
+                        if "event:" in response_text or response_text.startswith(":"):
+                            # Extract JSON from SSE data line
+                            lines = response_text.split("\n")
+                            mcp_log(f"[MCP] Found {len(lines)} lines in SSE response")
+                            for line in lines:
+                                if line.startswith("data:"):
+                                    json_str = line[5:].strip()  # Remove "data:" prefix
+                                    mcp_log(f"[MCP] Found data line, length: {len(json_str)} chars")
+                                    result = json.loads(json_str)
+                                    mcp_log(f"[MCP] Successfully parsed JSON-RPC response")
+                                    break
                             else:
-                                analysis_text = str(content)
+                                result = {"error": "No data in SSE response"}
+                        else:
+                            # Regular JSON response
+                            mcp_log(f"[MCP] Parsing as regular JSON")
+                            result = response.json()
 
-                            mcp_log(f"[MCP] Analysis text length: {len(analysis_text)} chars")
+                        mcp_log(f"[MCP] Success from {endpoint}")
+                        mcp_log(f"[MCP] Response keys: {result.keys() if isinstance(result, dict) else 'not dict'}")
 
-                            # Check if this is an error response
-                            if mcp_result.get("isError"):
-                                mcp_log(f"[MCP] ERROR RESPONSE: {analysis_text}")
+                        if isinstance(result, dict) and "result" in result:
+                            mcp_log(f"[MCP] Result keys: {result['result'].keys() if isinstance(result['result'], dict) else type(result['result'])}")
+
+                        # Handle MCP JSON-RPC response format
+                        if "result" in result:
+                            # MCP response - extract content
+                            mcp_result = result["result"]
+                            if isinstance(mcp_result, dict) and "content" in mcp_result:
+                                # Extract text content from MCP response
+                                content = mcp_result["content"]
+                                mcp_log(f"[MCP] Content type: {type(content)}, length: {len(content) if isinstance(content, (list, str)) else 'N/A'}")
+
+                                if isinstance(content, list) and len(content) > 0:
+                                    analysis_text = content[0].get("text", str(content))
+                                else:
+                                    analysis_text = str(content)
+
+                                mcp_log(f"[MCP] Analysis text length: {len(analysis_text)} chars")
+
+                                # Check if this is an error response
+                                if mcp_result.get("isError"):
+                                    mcp_log(f"[MCP] ERROR RESPONSE: {analysis_text}")
+                                    return {
+                                        "analysis_type": analysis_type,
+                                        "server_analysis_type": server_analysis_type,
+                                        "status": "error",
+                                        "error": f"MCP Server Error: {analysis_text}",
+                                        "source": f"MCP Medical Analysis Server ({endpoint})"
+                                    }
+
                                 return {
                                     "analysis_type": analysis_type,
                                     "server_analysis_type": server_analysis_type,
-                                    "status": "error",
-                                    "error": f"MCP Server Error: {analysis_text}",
+                                    "status": "success",
+                                    "analysis": analysis_text,
+                                    "tokens_used": mcp_result.get("tokens_used", 0),
                                     "source": f"MCP Medical Analysis Server ({endpoint})"
                                 }
-
-                            return {
-                                "analysis_type": analysis_type,
-                                "server_analysis_type": server_analysis_type,
-                                "status": "success",
-                                "analysis": analysis_text,
-                                "tokens_used": mcp_result.get("tokens_used", 0),
-                                "source": f"MCP Medical Analysis Server ({endpoint})"
-                            }
+                            else:
+                                # No content field - return raw result
+                                mcp_log(f"[MCP] No 'content' field in result, returning raw: {str(mcp_result)[:200]}")
+                                return {
+                                    "analysis_type": analysis_type,
+                                    "server_analysis_type": server_analysis_type,
+                                    "status": "success",
+                                    "analysis": mcp_result,
+                                    "source": f"MCP Medical Analysis Server ({endpoint})"
+                                }
+                        elif "error" in result:
+                            # MCP error response - don't retry, this is a server-side error
+                            last_error = result["error"].get("message", str(result["error"]))
+                            break  # Try next endpoint
                         else:
-                            # No content field - return raw result
-                            mcp_log(f"[MCP] No 'content' field in result, returning raw: {str(mcp_result)[:200]}")
+                            # REST response format
                             return {
                                 "analysis_type": analysis_type,
                                 "server_analysis_type": server_analysis_type,
                                 "status": "success",
-                                "analysis": mcp_result,
+                                "analysis": result.get("analysis", result),
+                                "tokens_used": result.get("tokens_used", 0),
                                 "source": f"MCP Medical Analysis Server ({endpoint})"
                             }
-                    elif "error" in result:
-                        # MCP error response
-                        last_error = result["error"].get("message", str(result["error"]))
-                        continue
+                    elif response.status_code == 404:
+                        last_error = f"Endpoint not found: {endpoint}"
+                        mcp_log(f"[MCP] 404 response body: {response.text[:500]}")
+                        break  # Try next endpoint
                     else:
-                        # REST response format
-                        return {
-                            "analysis_type": analysis_type,
-                            "server_analysis_type": server_analysis_type,
-                            "status": "success",
-                            "analysis": result.get("analysis", result),
-                            "tokens_used": result.get("tokens_used", 0),
-                            "source": f"MCP Medical Analysis Server ({endpoint})"
-                        }
-                elif response.status_code == 404:
-                    last_error = f"Endpoint not found: {endpoint}"
-                    mcp_log(f"[MCP] 404 response body: {response.text[:500]}")
-                    continue
-                else:
-                    last_error = f"Status {response.status_code}: {response.text[:200]}"
-                    mcp_log(f"[MCP] Error response: Status {response.status_code}")
-                    mcp_log(f"[MCP] Response body: {response.text[:500]}")
-                    continue
+                        last_error = f"Status {response.status_code}: {response.text[:200]}"
+                        mcp_log(f"[MCP] Error response: Status {response.status_code}")
+                        mcp_log(f"[MCP] Response body: {response.text[:500]}")
+                        break  # Try next endpoint
 
-            except requests.exceptions.ConnectionError as e:
-                last_error = f"Connection failed to {endpoint}"
-                continue
-            except Exception as e:
-                last_error = str(e)
-                continue
+                except requests.exceptions.Timeout:
+                    last_error = f"Timeout after 180s (attempt {retry + 1})"
+                    mcp_log(f"[MCP] Timeout on attempt {retry + 1}/{max_retries}")
+                    if retry < max_retries - 1:
+                        wait_time = 5 * (retry + 1)  # 5s, 10s backoff
+                        mcp_log(f"[MCP] Waiting {wait_time}s before retry...")
+                        time_module.sleep(wait_time)
+                        continue
+                    break  # All retries exhausted, try next endpoint
+                except requests.exceptions.ConnectionError as e:
+                    last_error = f"Connection failed to {endpoint}"
+                    mcp_log(f"[MCP] Connection error: {e}")
+                    break  # Try next endpoint
+                except Exception as e:
+                    last_error = str(e)
+                    mcp_log(f"[MCP] Exception: {e}")
+                    break  # Try next endpoint
 
         # All endpoints failed
         mcp_log(f"[MCP] All endpoints failed. Last error: {last_error}")
