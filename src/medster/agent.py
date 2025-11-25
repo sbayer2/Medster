@@ -96,16 +96,29 @@ class Agent:
 
     # ---------- ask LLM if main goal is achieved ----------
     @show_progress("Checking if analysis is complete...", "")
-    def is_goal_achieved(self, query: str, task_outputs: list) -> bool:
-        """Check if the overall goal is achieved based on all session outputs."""
+    def is_goal_achieved(self, query: str, task_outputs: list, tasks: list = None) -> bool:
+        """Check if the overall goal is achieved based on all session outputs and task completion."""
         all_results = "\n\n".join(task_outputs)
+
+        # Format task plan for meta-validator
+        task_plan = ""
+        if tasks:
+            task_list = []
+            for i, task in enumerate(tasks, 1):
+                status = "✓ COMPLETED" if task.done else "✗ NOT COMPLETED"
+                task_list.append(f"{i}. {status}: {task.description}")
+            task_plan = f"""
+Task Plan:
+{chr(10).join(task_list)}
+"""
+
         prompt = f"""
         Original clinical query: "{query}"
-
+{task_plan}
         Data and results collected from tools so far:
         {all_results}
 
-        Based on the data above, is the original clinical query sufficiently answered?
+        Based on the task plan and data above, is the original clinical query sufficiently answered?
         """
         try:
             resp = call_llm(prompt, system_prompt=META_VALIDATION_SYSTEM_PROMPT, output_schema=IsDone)
@@ -274,7 +287,7 @@ class Agent:
                     self.logger.log_task_done(task.description)
                     break
 
-            if task.done and self.is_goal_achieved(query, task_outputs):
+            if task.done and self.is_goal_achieved(query, task_outputs, tasks):
                 self.logger._log("Clinical analysis complete. Generating summary.")
                 break
 

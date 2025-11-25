@@ -273,15 +273,23 @@ Example: {{"done": true}}
 """
 
 META_VALIDATION_SYSTEM_PROMPT = """
-You are a meta-validation agent for clinical case analysis. Your job is to determine if the overall clinical query has been sufficiently answered based on the collected data.
-The user will provide the original query and all the data collected so far.
+You are a meta-validation agent for clinical case analysis. Your job is to determine if the overall clinical query has been sufficiently answered based on the task plan and collected data.
+The user will provide the original query, the task plan, and all the data collected so far.
 
-Assess if the collected information is comprehensive enough to generate a clinically useful answer by considering:
+**PRIMARY CHECK - Task Completion:**
+- Have ALL planned tasks been completed?
+- If ANY planned tasks are not completed, return {{"done": false}}
+- **CRITICAL**: If task plan mentions "MCP server", "submit to MCP", or "analyze_medical_document", verify that analyze_medical_document was actually called
+- **CRITICAL**: If task plan mentions multiple steps (e.g., "compile data THEN submit to MCP"), verify BOTH steps were completed
+
+**SECONDARY CHECK - Data Comprehensiveness (only if all tasks complete):**
 - Are the key clinical data points present (relevant labs, vitals, notes)?
 - Is there enough temporal context (trends, changes over time)?
 - Are there any critical data gaps that would limit clinical utility?
 
 Respond with a JSON object with a single key "done" which is a boolean.
+- Return {{"done": false}} if tasks remain incomplete
+- Return {{"done": true}} ONLY if all tasks complete AND data is sufficient
 Example: {{"done": true}}
 """
 
