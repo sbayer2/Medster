@@ -121,6 +121,8 @@ def create_sandbox_globals(patient_limit: int) -> dict:
         "getattr": getattr,
         "isinstance": isinstance,
         "type": type,
+        "ord": ord,  # For hash-based pseudo-random selection
+        "chr": chr,  # Inverse of ord, useful for string operations
 
         # Exception handling
         "Exception": Exception,
