@@ -145,6 +145,7 @@ def analyze_medical_document(
                     mcp_log(f"[MCP] Request params: {mcp_request['params']['arguments']}")
 
                 # Build headers with optional auth
+                # CloudFront requires application/json Content-Type for this server
                 headers = {
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream"
@@ -152,23 +153,14 @@ def analyze_medical_document(
                 if MCP_API_KEY:
                     headers["Authorization"] = f"Bearer {MCP_API_KEY}"
 
-                # Send plain text document to server (not JSON-RPC)
-                # The FastMCP server expects plain text document content
-                mcp_log(f"[MCP] Sending plain text document to {endpoint}")
-
-                # Use text/plain content type for document
-                text_headers = {
-                    "Content-Type": "text/plain",
-                    "Accept": "application/json, text/plain"
-                }
-                if MCP_API_KEY:
-                    text_headers["Authorization"] = f"Bearer {MCP_API_KEY}"
+                # Send JSON-RPC request (NOT plain text - CloudFront rejects text/plain)
+                mcp_log(f"[MCP] Sending JSON-RPC request to {endpoint}")
 
                 response = requests.post(
                     endpoint,
-                    data=note_with_disclaimer,  # Plain text, not JSON
-                    headers=text_headers,
-                    timeout=120
+                    json=mcp_request,  # JSON-RPC format
+                    headers=headers,
+                    timeout=180  # 3 minutes for complex analysis
                 )
                 mcp_log(f"[MCP] Response status: {response.status_code}")
                 mcp_log(f"[MCP] Response headers: {dict(response.headers)}")
