@@ -76,7 +76,8 @@ class Agent:
             return ai_message
         except Exception as e:
             self.logger._log(f"ask_for_actions failed: {e}")
-            return AIMessage(content="Failed to get actions.")
+            # Return special marker to indicate failure (not completion)
+            return AIMessage(content="AGENT_ERROR: " + str(e))
 
     # ---------- ask LLM if task is done ----------
     @show_progress("Checking if task is complete...", "")
@@ -209,6 +210,12 @@ class Agent:
 
                 ai_message = self.ask_for_actions(task.description, last_outputs=all_session_outputs)
 
+                # Check for agent error (e.g., token overflow)
+                if hasattr(ai_message, 'content') and isinstance(ai_message.content, str) and ai_message.content.startswith("AGENT_ERROR:"):
+                    self.logger._log(f"Task failed due to agent error - NOT marking as complete")
+                    # Don't mark as done - break to try next task or finish
+                    break
+
                 if not ai_message.tool_calls:
                     task.done = True
                     self.logger.log_task_done(task.description)
@@ -252,6 +259,15 @@ class Agent:
 
                     step_count += 1
                     per_task_steps += 1
+
+                # Check if MCP task actually called the required tool
+                is_mcp_task = any(kw in task.description.lower() for kw in ["mcp", "analyze_medical_document"])
+                mcp_tool_called = any("analyze_medical_document" in output for output in task_step_outputs)
+
+                if is_mcp_task and not mcp_tool_called:
+                    self.logger._log(f"MCP task did not call analyze_medical_document - NOT marking as complete")
+                    # Don't mark as done - the tool wasn't called
+                    break
 
                 if self.ask_if_done(task.description, "\n".join(task_step_outputs)):
                     task.done = True
