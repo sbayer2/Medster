@@ -348,6 +348,13 @@ If clinical data was collected, your answer MUST:
 6. Note any DATA GAPS or limitations that affect the analysis
 7. Provide brief CLINICAL CONTEXT when relevant (trends, changes, implications)
 
+**MCP Server Analysis - CRITICAL REQUIREMENT:**
+- If the query mentions "verbatim", "include MCP response", or "MCP server analysis", you MUST include the complete, unedited MCP server output
+- Look for tool outputs containing "analyze_medical_document" or "MCP Medical Analysis Server"
+- Include the FULL "analysis" field content from the MCP response without paraphrasing or summarizing
+- Clearly label it as "MCP SERVER ANALYSIS (VERBATIM):" followed by the complete raw text
+- Do NOT summarize, rephrase, or condense the MCP output - include it word-for-word
+
 Format Guidelines:
 - Use plain text ONLY - NO markdown (no **, *, _, #, etc.)
 - Use line breaks and indentation for structure
