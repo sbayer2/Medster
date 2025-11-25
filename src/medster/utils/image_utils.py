@@ -11,6 +11,12 @@ from typing import Optional, Tuple, List
 import csv
 
 try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+try:
     import pydicom
     from pydicom.pixel_data_handlers.util import apply_voi_lut
     DICOM_AVAILABLE = True
@@ -49,6 +55,8 @@ def dicom_to_base64_png(
         ImageConversionError: If conversion fails
         ImportError: If pydicom or PIL not installed
     """
+    if not NUMPY_AVAILABLE:
+        raise ImportError("NumPy not installed. Install with: uv add numpy")
     if not DICOM_AVAILABLE:
         raise ImportError("pydicom not installed. Install with: uv add pydicom")
     if not PIL_AVAILABLE:
@@ -61,6 +69,25 @@ def dicom_to_base64_png(
         # Extract pixel data and apply VOI LUT (windowing) for proper visualization
         pixel_array = dicom.pixel_array
 
+        # Handle multi-dimensional arrays (3D volumes, unusual shapes)
+        # Squeeze single-frame dimensions: (1, 1, 256) → (256,) or (256, 256, 1) → (256, 256)
+        while pixel_array.ndim > 2 and 1 in pixel_array.shape:
+            pixel_array = np.squeeze(pixel_array)
+
+        # If still 3D (true multi-frame), take middle slice
+        if pixel_array.ndim == 3:
+            middle_slice = pixel_array.shape[0] // 2
+            pixel_array = pixel_array[middle_slice, :, :]
+
+        # If 1D (unusual format), try to reshape to square
+        if pixel_array.ndim == 1:
+            size = int(np.sqrt(len(pixel_array)))
+            if size * size == len(pixel_array):
+                pixel_array = pixel_array.reshape(size, size)
+            else:
+                # Can't reshape - use as 1D image (will fail gracefully)
+                pass
+
         # Apply VOI LUT if available (improves contrast)
         try:
             pixel_array = apply_voi_lut(pixel_array, dicom)
@@ -68,8 +95,12 @@ def dicom_to_base64_png(
             pass  # Use raw pixel data if VOI LUT fails
 
         # Normalize to 0-255 range
-        pixel_array = pixel_array - pixel_array.min()
-        pixel_array = (pixel_array / pixel_array.max() * 255).astype('uint8')
+        if pixel_array.size > 0:
+            pixel_array = pixel_array - pixel_array.min()
+            if pixel_array.max() > 0:
+                pixel_array = (pixel_array / pixel_array.max() * 255).astype('uint8')
+            else:
+                pixel_array = pixel_array.astype('uint8')
 
         # Convert to PIL Image
         image = Image.fromarray(pixel_array)
@@ -288,10 +319,11 @@ def verify_dependencies() -> dict:
         Dictionary with dependency status
     """
     return {
+        'numpy': NUMPY_AVAILABLE,
         'pydicom': DICOM_AVAILABLE,
         'pillow': PIL_AVAILABLE,
         'required_for': {
-            'dicom_conversion': 'pydicom and pillow',
+            'dicom_conversion': 'numpy, pydicom and pillow',
             'image_optimization': 'pillow',
             'ecg_extraction': 'none (uses standard library)'
         }
