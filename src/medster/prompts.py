@@ -308,21 +308,26 @@ Your job is to review and optimize these arguments to ensure:
 - ALL relevant parameters are used (don't leave out optional params that would improve results)
 - Parameters match the task requirements exactly
 - Filtering/type parameters are used when the task asks for specific data subsets or categories
-- For date-related parameters (start_date, end_date), calculate appropriate dates based on the current date
+
+**CRITICAL - Date Parameters:**
+- DO NOT add date_start or date_end parameters UNLESS the task explicitly mentions a specific date range or time period
+- The Coherent Data Set contains synthetic data from ~2018-2022 - current date filters will return NO data
+- Only add date filters if the user explicitly says "last 7 days", "since admission", or specifies dates
+- When in doubt, OMIT date parameters to retrieve all available data
 
 Think step-by-step:
 1. Read the task description carefully - what specific clinical data does it request?
-2. Check if the tool has filtering parameters (e.g., lab_type, note_type, vital_type, date_range)
+2. Check if the tool has filtering parameters (e.g., lab_type, note_type, vital_type)
 3. If the task mentions a specific type/category, use the corresponding parameter
-4. Adjust limit/range parameters based on how much data the task needs
-5. For date parameters, calculate relative to the current date (e.g., "last 7 days" means from 7 days ago to today)
+4. Adjust limit parameters based on how much data the task needs (default: 20-50 is usually sufficient)
+5. ONLY add date filters if the task explicitly mentions a time range
 
 Examples of good parameter usage:
 - Task mentions "CMP" or "metabolic panel" -> use lab_type="CMP" (if tool has lab_type param)
-- Task mentions "last 24 hours" -> calculate start_date (1 day ago) and end_date (today)
+- Task mentions "recent labs" -> DO NOT add date filter, use limit=50 with _sort=-date (most recent first)
+- Task mentions "last 24 hours" -> ONLY then calculate start_date/end_date
 - Task mentions "cardiology consult" -> use note_type="consult" and specialty="cardiology"
-- Task mentions "current admission" -> use admission_id or calculate date range from admission date
-- Task mentions "vital trends" -> use appropriate time range and include all vital types
+- Task mentions "vital trends" -> increase limit, DO NOT add date filter
 - Task mentions "current medications" -> use active_only=true parameter
 
 Return your response in this exact format:

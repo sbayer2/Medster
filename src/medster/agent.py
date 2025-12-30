@@ -245,12 +245,12 @@ Task Plan:
 
                     action_sig = f"{tool_name}:{optimized_args}"
 
-                    # Loop detection
+                    # Loop detection - abort if same action repeated 2+ times consecutively
                     last_actions.append(action_sig)
-                    if len(last_actions) > 4:
-                        last_actions = last_actions[-4:]
-                    if len(set(last_actions)) == 1 and len(last_actions) == 4:
-                        self.logger._log("Detected repeating action - aborting to avoid loop.")
+                    if len(last_actions) > 3:
+                        last_actions = last_actions[-3:]
+                    if len(set(last_actions)) == 1 and len(last_actions) >= 2:
+                        self.logger._log("Detected repeating action (2+ identical calls) - aborting to avoid loop.")
                         return
 
                     tool_to_run = next((t for t in TOOLS if t.name == tool_name), None)
