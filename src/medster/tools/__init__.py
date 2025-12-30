@@ -24,6 +24,7 @@ from medster.tools.medical.imaging import get_radiology_reports
 # Import clinical scoring tools
 from medster.tools.clinical.scores import (
     calculate_clinical_score,
+    calculate_patient_score,
 )
 
 # Import MCP analysis tools
@@ -67,6 +68,7 @@ TOOLS: list[Callable[..., any]] = [
 
     # Clinical scores
     calculate_clinical_score,
+    calculate_patient_score,  # Patient-aware scoring with automatic risk factor extraction
 
     # Complex analysis via MCP server
     analyze_medical_document,
